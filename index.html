@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Tokyo Station Shinkansen Departure Board v0.4</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="screen-shell">
+    <header class="station-header">
+      <div class="station-name">東京 <span>TOKYO·도쿄</span></div>
+      <div class="direction" id="directionLabel">東海道・山陽新幹線　新大阪・博多方面</div>
+      <div class="clock-wrap"><span class="clock-label">JST</span><span id="jstClock">--:--:--</span></div>
+    </header>
+
+    <section class="toolbar" aria-label="Display controls">
+      <div class="lang-buttons">
+        <button data-lang="ja">日本語</button>
+        <button data-lang="en">English</button>
+        <button data-lang="ko">한국어</button>
+        <button class="active" data-lang="auto">AUTO</button>
+      </div>
+      <div class="toolbar-right">
+        <div id="realtimeState" class="realtime-state loading" title="JR Central realtime connection status">
+          <span class="realtime-dot" aria-hidden="true"></span>
+          <span id="realtimeLabel">CONNECTING</span>
+          <small id="realtimeUpdated"></small>
+        </div>
+        <label class="test-time">TEST
+          <input id="testTime" type="time" step="60" />
+          <button id="clearTest" type="button">LIVE</button>
+        </label>
+      </div>
+    </section>
+
+    <section class="board" aria-live="polite">
+      <div class="board-head">
+        <div id="headTime">時刻</div>
+        <div id="headTrain">列車</div>
+        <div id="headDest">行先</div>
+        <div id="headTrack">番線</div>
+        <div id="headInfo">ご案内</div>
+      </div>
+      <div id="rows" class="rows"></div>
+    </section>
+
+    <footer class="footer-strip">
+      <div id="coverage">06:00〜22:48 東京発</div>
+      <div class="ticker"><span id="tickerText"></span></div>
+      <div class="source-note"><span id="sourceMode">JR Central realtime connecting</span> · timetable fallback <span id="serviceDate"></span></div>
+    </footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
