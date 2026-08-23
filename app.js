@@ -1,4 +1,4 @@
-// Tokyo Station Tokaido/Sanyo Shinkansen departure board v0.4.2
+// Tokyo Station Tokaido/Sanyo Shinkansen departure board v0.4.3
 // Base timetable: JR Central timetable effective 2026-03-14.
 // Date-specific services registered here are the services confirmed for 2026-08-23.
 // A null platform is intentionally shown as "—" instead of guessing.
@@ -205,21 +205,21 @@ const timetable = [
 
 const copy = {
   ja: {
-    direction:'東海道・山陽新幹線　新大阪・博多方面', heads:['時刻','列車','行先','番線','ご案内'], track:'番線',
+    direction:'東海道・山陽新幹線\n新大阪・博多方面', heads:['時刻','列車','行先','番線','ご案内'], track:'番線',
     ended:'本日の東京駅発の運転は終了しました', endedSub:'次の運転日は当日の運転条件に基づいて表示します。',
     coverage:'06:00〜22:48 東京発・当日運転列車のみ表示',
     ticker:'自由席案内と停車駅案内を交互に表示しています。停車駅案内は各言語で2回ずつスクロール表示します。時刻表ベースの表示です。遅延・運休・当日の番線変更はリアルタイム反映されません。',
     free:'自由席', stops:'停車駅', every:'各駅に停車', otherStops:'ほか停車', unknownTrack:'未確認'
   },
   en: {
-    direction:'Tokaido / Sanyo Shinkansen · for Shin-Osaka / Hakata', heads:['Time','Train','Destination','Track','Information'], track:'Track',
+    direction:'Tokaido / Sanyo Shinkansen\nfor Shin-Osaka / Hakata', heads:['Time','Train','Destination','Track','Information'], track:'Track',
     ended:'Tokyo departures have finished for today', endedSub:'The next service day is filtered by its operating-date conditions.',
     coverage:'06:00–22:48 from Tokyo · operating trains only',
     ticker:'Non-reserved-seat information and stop information alternate on the board. Stop information scrolls twice in each language. This is timetable-based; delays, cancellations and same-day platform changes are not live.',
     free:'Non-reserved', stops:'Stops', every:'Stops at every station', otherStops:'other stops', unknownTrack:'unverified'
   },
   ko: {
-    direction:'도카이도·산요 신칸센　신오사카·하카타 방면', heads:['시각','열차','행선지','번선','안내'], track:'번선',
+    direction:'도카이도·산요 신칸센\n신오사카·하카타 방면', heads:['시각','열차','행선지','번선','안내'], track:'번선',
     ended:'오늘 도쿄역 출발 운행이 종료되었습니다', endedSub:'다음 운행일에는 해당 날짜의 운전 조건에 맞는 열차만 표시합니다.',
     coverage:'06:00~22:48 도쿄 출발 · 당일 운행 열차만 표시',
     ticker:'자유석 안내와 정차역 안내가 번갈아 표시됩니다. 정차역 안내는 언어별로 2회씩 슬라이드 표시됩니다. 예정 시각표 기반이며 지연·운휴·당일 승강장 변경은 실시간 반영되지 않습니다.',
@@ -331,11 +331,11 @@ function stopInfo(train, lang) {
 function infoFor(train, lang, date) { return infoPhase===0 ? freeSeatInfo(train,lang,date) : stopInfo(train,lang); }
 
 
-// Match every stop-information caption to the slowest currently visible scroll speed.
-// With the old fixed 7-second duration, short captions moved slowest and long captions moved faster.
-// The shortest travel distance remains a 7-second pass; longer captions receive proportionally
-// longer durations so every row travels at exactly the same px/sec. The phase waits for two
-// complete passes of the longest caption before changing language/section.
+// v0.4.3: synchronize every stop-information row to the longest visible caption.
+// First, keep the v0.4.1 slow-speed rule to calculate how long the longest caption needs.
+// Then assign that SAME one-pass duration to every row, so all rows begin/end each pass
+// together and repeat exactly twice before the language/section changes. Shorter captions
+// therefore move more slowly, matching the timing of the longest stop list.
 function calibrateStopScrollSpeed() {
   if (infoPhase !== 1) {
     stopLangDurationMs = STOP_SCROLL_BASE_PASS_MS * 2;
@@ -354,19 +354,18 @@ function calibrateStopScrollSpeed() {
     return {el, windowWidth, distance:windowWidth + textWidth};
   });
 
-  // The smallest distance was the slowest row under the old fixed 7-second animation.
+  // Preserve the previous slow baseline: the shortest old 7-second pass defines px/ms.
   const slowestDistance=Math.min(...metrics.map(m=>m.distance));
   const targetPxPerMs=slowestDistance / STOP_SCROLL_BASE_PASS_MS;
-  let longestPassMs=STOP_SCROLL_BASE_PASS_MS;
+  const longestDistance=Math.max(...metrics.map(m=>m.distance));
+  const syncedPassMs=Math.max(STOP_SCROLL_BASE_PASS_MS, longestDistance / targetPxPerMs);
 
-  metrics.forEach(({el,windowWidth,distance})=>{
-    const passMs=Math.max(STOP_SCROLL_BASE_PASS_MS, distance / targetPxPerMs);
-    longestPassMs=Math.max(longestPassMs, passMs);
+  metrics.forEach(({el,windowWidth})=>{
     el.style.setProperty('--scroll-window-width', `${windowWidth}px`);
-    el.style.setProperty('--slide-duration', `${Math.ceil(passMs)}ms`);
+    el.style.setProperty('--slide-duration', `${Math.ceil(syncedPassMs)}ms`);
   });
 
-  stopLangDurationMs=Math.ceil(longestPassMs * 2) + 120;
+  stopLangDurationMs=Math.ceil(syncedPassMs * 2) + 120;
 }
 
 function formatRealtimeUpdated(iso) {
