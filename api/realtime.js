@@ -42,7 +42,7 @@ async function scrapeRealtime() {
       ignoreHTTPSErrors:false
     });
     const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/149.0.0.0 Safari/537.36 TokyoDepartureBoard/0.4');
+    await page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/149.0.0.0 Safari/537.36 TokyoDepartureBoard/0.4.2');
     await page.setExtraHTTPHeaders({'Accept-Language':'ja-JP,ja;q=0.9'});
     await page.setRequestInterception(true);
     page.on('request', req => {
