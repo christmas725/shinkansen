@@ -1,13 +1,13 @@
 {
   "name": "tokyo-shinkansen-departure-board",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "private": true,
   "description": "Tokyo Station Tokaido/Sanyo Shinkansen departure board with JR Central realtime fallback",
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
-    "@sparticuz/chromium": "149.0.0",
-    "puppeteer-core": "25.1.0"
+    "@sparticuz/chromium": "148.0.0",
+    "puppeteer-core": "25.0.1"
   }
 }
