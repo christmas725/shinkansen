@@ -1,5 +1,8 @@
 const SOURCE_URL = 'https://traininfo.jr-central.co.jp/shinkansen/pc/ja/ti04.html?station=1&bound=2';
 const CACHE_MS = 35000;
+const STALE_CACHE_MS = 5 * 60 * 1000;
+const FIRST_DEPARTURE_MIN = 6 * 60;
+const LAST_DEPARTURE_MIN = 22 * 60 + 48;
 
 const TYPE_MAP = {
   'のぞみ':'nozomi', 'ひかり':'hikari', 'こだま':'kodama',
@@ -9,6 +12,38 @@ const DEST_MAP = {
   '博多':'hakata','広島':'hiroshima','岡山':'okayama','姫路':'himeji','新大阪':'shinOsaka',
   '名古屋':'nagoya','三島':'mishima','静岡':'shizuoka','浜松':'hamamatsu'
 };
+
+function getJstMinutes() {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone:'Asia/Tokyo', hour:'2-digit', minute:'2-digit', hour12:false
+  }).formatToParts(new Date());
+  const hour = Number(parts.find(p=>p.type==='hour')?.value || 0) % 24;
+  const minute = Number(parts.find(p=>p.type==='minute')?.value || 0);
+  return hour * 60 + minute;
+}
+
+function serviceState() {
+  const nowMin = getJstMinutes();
+  return {
+    open: nowMin >= FIRST_DEPARTURE_MIN && nowMin <= LAST_DEPARTURE_MIN,
+    nowMin,
+    firstDeparture:'06:00',
+    lastDeparture:'22:48'
+  };
+}
+
+function noServicePayload() {
+  return {
+    ok:true,
+    source:'no-service-hours',
+    sourceUrl:SOURCE_URL,
+    updated:new Date().toISOString(),
+    serviceState:'closed',
+    firstDeparture:'06:00',
+    lastDeparture:'22:48',
+    trains:[]
+  };
+}
 
 function mockPayload() {
   return {
@@ -160,7 +195,7 @@ async function scrapeRealtime() {
       if (process.env.JR_DEBUG==='1') err.bodySample=extracted.bodySample;
       throw err;
     }
-    return {ok:true,source:'jr-central-departure-order',sourceUrl:SOURCE_URL,updated:new Date().toISOString(),trains};
+    return {ok:true,source:'jr-central-departure-order',sourceUrl:SOURCE_URL,updated:new Date().toISOString(),serviceState:'open',trains};
   } finally {
     if (browser) await browser.close().catch(()=>{});
   }
@@ -171,6 +206,9 @@ module.exports = async function handler(req,res) {
   res.setHeader('Cache-Control','s-maxage=35, stale-while-revalidate=120');
   if (req.query && String(req.query.mock)==='1') return res.status(200).json(mockPayload());
 
+  const state=serviceState();
+  if (!state.open) return res.status(200).json(noServicePayload());
+
   const cache=getCache();
   if (cache.payload && Date.now()-cache.at<CACHE_MS) return res.status(200).json(cache.payload);
 
@@ -179,11 +217,21 @@ module.exports = async function handler(req,res) {
     cache.at=Date.now(); cache.payload=payload;
     return res.status(200).json(payload);
   } catch (error) {
+    if (cache.payload && Date.now()-cache.at<STALE_CACHE_MS) {
+      return res.status(200).json({
+        ...cache.payload,
+        source:'jr-central-stale-cache',
+        updated:new Date().toISOString(),
+        stale:true,
+        upstreamError:error?.code || error?.message || 'REALTIME_FETCH_FAILED'
+      });
+    }
     return res.status(200).json({
       ok:false,
       source:'jr-central-departure-order',
       sourceUrl:SOURCE_URL,
       updated:new Date().toISOString(),
+      serviceState:'open',
       error:error?.code || error?.message || 'REALTIME_FETCH_FAILED',
       ...(process.env.JR_DEBUG==='1' && error?.bodySample ? {bodySample:error.bodySample} : {})
     });
