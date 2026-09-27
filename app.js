@@ -591,7 +591,9 @@ testInput.addEventListener('input',()=>{lastRenderKey='';renderBoard(true)});
 document.getElementById('clearTest').addEventListener('click',()=>{testInput.value='';lastRenderKey='';renderBoard(true);refreshRealtime()});
 
 setInterval(updateClock,1000);
-setInterval(refreshRealtime,REALTIME_REFRESH_MS);
+// Resolve refreshRealtime at execution time so later compatibility/behavior overrides
+// (such as the off-hours handler loaded by v044-fix.js) are honored by every refresh.
+setInterval(()=>refreshRealtime(),REALTIME_REFRESH_MS);
 updateClock();
 renderBoard(true);
 scheduleDisplayCycle();
