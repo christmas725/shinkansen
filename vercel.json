@@ -8,7 +8,31 @@
     {
       "source": "/api/realtime",
       "headers": [
-        { "key": "Cache-Control", "value": "s-maxage=35, stale-while-revalidate=120" }
+        {
+          "key": "Cache-Control",
+          "value": "s-maxage=35, stale-while-revalidate=120"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "SAMEORIGIN"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
+        }
       ]
     }
   ]
