@@ -1,3 +1,4 @@
+const {createCache}=require('../server/proxy-cache.cjs');
 const SOURCE_URL = 'https://traininfo.jr-central.co.jp/shinkansen/pc/ja/ti04.html?station=1&bound=2';
 const CACHE_MS = 35000;
 const STALE_CACHE_MS = 5 * 60 * 1000;
@@ -67,6 +68,8 @@ async function scrapeRealtime() {
   const puppeteer = require('puppeteer-core');
   const chromium = require('@sparticuz/chromium');
   let browser;
+  let timedOut=false;
+  const deadline=setTimeout(()=>{timedOut=true;if(browser)void browser.close().catch(()=>{})},24000);
   try {
     const executablePath = process.env.CHROME_EXECUTABLE_PATH || await chromium.executablePath();
     browser = await puppeteer.launch({
@@ -74,8 +77,10 @@ async function scrapeRealtime() {
       defaultViewport:{width:1440,height:1100,deviceScaleFactor:1},
       executablePath,
       headless:chromium.headless,
+      timeout:6000,
       ignoreHTTPSErrors:false
     });
+    if(timedOut)throw new Error('REALTIME_TIMEOUT');
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/149.0.0.0 Safari/537.36 TokyoDepartureBoard/0.4.2');
     await page.setExtraHTTPHeaders({'Accept-Language':'ja-JP,ja;q=0.9'});
@@ -86,11 +91,11 @@ async function scrapeRealtime() {
       else req.continue();
     });
 
-    await page.goto(SOURCE_URL,{waitUntil:'domcontentloaded',timeout:25000});
+    await page.goto(SOURCE_URL,{waitUntil:'domcontentloaded',timeout:12000});
     await page.waitForFunction(() => {
       const text=document.body?.innerText || '';
       return /(のぞみ|ひかり|こだま|みずほ|さくら|つばめ)\s*\d+/.test(text);
-    },{timeout:12000}).catch(()=>{});
+    },{timeout:5000}).catch(()=>{});
     await new Promise(r=>setTimeout(r,1200));
 
     const extracted = await page.evaluate(() => {
@@ -173,6 +178,8 @@ async function scrapeRealtime() {
       return {trains:result, bodySample:clean(document.body?.innerText || '').slice(0,1600)};
     });
 
+    if(timedOut)throw new Error('REALTIME_TIMEOUT');
+    if((extracted.trains||[]).length>500)throw new Error('REALTIME_RESPONSE_TOO_LARGE');
     const trains=(extracted.trains || []).map(t=>({
       type:TYPE_MAP[t.typeJa] || t.typeJa,
       no:t.no,
@@ -197,43 +204,39 @@ async function scrapeRealtime() {
     }
     return {ok:true,source:'jr-central-departure-order',sourceUrl:SOURCE_URL,updated:new Date().toISOString(),serviceState:'open',trains};
   } finally {
-    if (browser) await browser.close().catch(()=>{});
+    clearTimeout(deadline);
+    if (browser) {
+      let closeTimer;
+      try { await Promise.race([browser.close().catch(()=>{}),new Promise(resolve=>{
+        closeTimer=setTimeout(()=>{browser.process()?.kill('SIGKILL');resolve()},1500);
+      })]); } finally {clearTimeout(closeTimer);}
+    }
   }
 }
 
-module.exports = async function handler(req,res) {
+function createHandler({cache=createCache('rail',{maxConcurrent:1}),scrape=scrapeRealtime,state=serviceState,production=process.env.VERCEL_ENV==='production'}={}) {
+ return async function handler(req,res) {
   res.setHeader('Content-Type','application/json; charset=utf-8');
-  res.setHeader('Cache-Control','s-maxage=35, stale-while-revalidate=120');
-  if (req.query && String(req.query.mock)==='1') return res.status(200).json(mockPayload());
-
-  const state=serviceState();
-  if (!state.open) return res.status(200).json(noServicePayload());
-
-  const cache=getCache();
-  if (cache.payload && Date.now()-cache.at<CACHE_MS) return res.status(200).json(cache.payload);
-
-  try {
-    const payload=await scrapeRealtime();
-    cache.at=Date.now(); cache.payload=payload;
-    return res.status(200).json(payload);
-  } catch (error) {
-    if (cache.payload && Date.now()-cache.at<STALE_CACHE_MS) {
-      return res.status(200).json({
-        ...cache.payload,
-        source:'jr-central-stale-cache',
-        updated:new Date().toISOString(),
-        stale:true,
-        upstreamError:error?.code || error?.message || 'REALTIME_FETCH_FAILED'
-      });
-    }
-    return res.status(200).json({
-      ok:false,
-      source:'jr-central-departure-order',
-      sourceUrl:SOURCE_URL,
-      updated:new Date().toISOString(),
-      serviceState:'open',
-      error:error?.code || error?.message || 'REALTIME_FETCH_FAILED',
-      ...(process.env.JR_DEBUG==='1' && error?.bodySample ? {bodySample:error.bodySample} : {})
-    });
+  res.setHeader('X-Content-Type-Options','nosniff');
+  res.setHeader('Cache-Control','no-store');
+  if(req.method!=='GET'){res.setHeader('Allow','GET');return res.status(405).json({ok:false,error:'method_not_allowed'})}
+  const query=req.query||{};
+  if(Object.keys(query).length){
+   if(!production&&Object.keys(query).length===1&&query.mock==='1')return res.status(200).json(mockPayload());
+   return res.status(400).json({ok:false,error:'invalid_query'});
   }
-};
+  if(!state().open){res.setHeader('Cache-Control','s-maxage=35, stale-while-revalidate=120');return res.status(200).json(noServicePayload())}
+  try {
+   const payload=await cache.get('tokyo-departures-v1',req,scrape);
+   res.setHeader('Cache-Control','s-maxage=35, stale-while-revalidate=120');
+   return res.status(200).json(payload);
+  }catch(error){
+   const safe=new Set(['proxy_storage_unavailable','proxy_busy','proxy_budget_exceeded','proxy_refresh_pending']);
+   const status=error.status||502;
+   if(status===429||status===503)res.setHeader('Retry-After','30');
+   return res.status(status).json({ok:false,source:'jr-central-departure-order',sourceUrl:SOURCE_URL,updated:new Date().toISOString(),serviceState:'open',error:safe.has(error.message)?error.message:'REALTIME_FETCH_FAILED'});
+  }
+ };
+}
+module.exports=createHandler();
+module.exports.createHandler=createHandler;
